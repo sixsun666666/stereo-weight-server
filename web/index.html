@@ -56,14 +56,21 @@
     }
     .title b{font-size:16px; letter-spacing:.2px;}
     .title span{font-size:12px; color:var(--muted)}
+    .topbar-nav{ display:flex; align-items:center; gap:10px; }
+    .topbar-right{ display:flex; align-items:center; gap:12px; margin-left:12px; padding-left:12px; border-left:1px solid var(--stroke); }
     .pill{
       display:inline-flex; align-items:center; gap:8px;
-      padding:8px 12px; border-radius:999px;
+      padding:10px 16px; border-radius:999px;
       border:1px solid var(--stroke);
-      background: rgba(255,255,255,.05);
-      color:var(--muted);
-      font-size:12px;
+      background: rgba(255,255,255,.08);
+      color:var(--text);
+      font-size:13px;
+      transition:.15s ease;
+      text-decoration:none;
     }
+    a.pill:hover{ background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.22); transform: translateY(-1px); }
+    .pill.active{ background: rgba(124,92,255,.25); border-color: var(--brand); color:#fff; }
+    .pill.user-pill{ background: rgba(255,255,255,.06); color:var(--muted); font-size:12px; padding:8px 12px; }
     .grid{
       display:grid;
       grid-template-columns: 1.2fr .8fr;
@@ -260,7 +267,18 @@
           <span>Temporal Median Aggregation + MAD Robust Filtering</span>
         </div>
       </div>
-      <div class="pill" id="apiPill">API: <span id="apiBase">/</span></div>
+      <div style="display:flex; align-items:center; gap:0;">
+        <nav class="topbar-nav">
+          <a href="/app" class="pill active">估重</a>
+          <a href="/history" class="pill">历史统计</a>
+          <a href="/pools-page" class="pill">鱼池管理</a>
+        </nav>
+        <div class="topbar-right">
+          <span class="pill user-pill" id="userPill">用户: <span id="userName">—</span></span>
+          <span class="pill user-pill" id="apiPill">API: <span id="apiBase">/</span></span>
+          <button class="btn" id="btnLogout">退出</button>
+        </div>
+      </div>
     </div>
 
     <div class="grid">
@@ -275,6 +293,13 @@
         </div>
         <div class="bd">
           <div class="drop" id="dropZone">
+            <div class="field" style="margin-bottom:12px;">
+              <label style="font-size:12px; color:var(--muted); margin-bottom:6px;">鱼池（必选）</label>
+              <select id="pool_name" style="width:100%; max-width:200px; padding:8px 10px; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.06); color:var(--text);">
+                <option value="">请先添加鱼池</option>
+              </select>
+              <span style="font-size:12px; color:var(--muted); margin-left:8px;"><a href="/pools-page" style="color:var(--brand);">鱼池管理</a></span>
+            </div>
             <div class="row">
               <div class="filebox" id="boxLeft">
                 <div class="lbl">
@@ -432,9 +457,27 @@
     const setBar = (p)=>{$("progressBar").style.width = Math.max(0, Math.min(100, p)) + "%";}
     const fmt = (x, d=2)=> (x===null||x===undefined||Number.isNaN(x)) ? "—" : Number(x).toFixed(d);
     const now = ()=>Date.now()/1000;
+    function authHeaders() { return { "Authorization": "Bearer " + (localStorage.getItem("token") || "") }; }
+    function check401(r) { if (r && r.status === 401) { localStorage.removeItem("token"); localStorage.removeItem("username"); localStorage.removeItem("role"); window.location.href = "/"; return true; } return false; }
 
-    // Detect base (same origin)
+    // ===== Auth =====
+    if (!localStorage.getItem("token")) { window.location.href = "/"; }
+    $("userName").textContent = localStorage.getItem("username") || "—";
     $("apiBase").textContent = location.origin;
+    $("btnLogout").onclick = ()=>{ localStorage.removeItem("token"); localStorage.removeItem("username"); localStorage.removeItem("role"); window.location.href = "/"; };
+
+    // ===== Pools dropdown =====
+    async function loadPools(){
+      try {
+        const r = await fetch("/pools", { headers: authHeaders() });
+        if (check401(r)) return;
+        const list = await r.json();
+        const sel = $("pool_name");
+        sel.innerHTML = list.length ? "" : '<option value="">请先添加鱼池</option>';
+        list.forEach(p => { const o = document.createElement("option"); o.value = p.name; o.textContent = p.name; sel.appendChild(o); });
+      } catch (e) {}
+    }
+    loadPools();
 
     // ===== State =====
     let leftFile = null, rightFile = null;
@@ -508,6 +551,7 @@
     // ===== Params =====
     function gatherParams(){
       return {
+        pool_name: $("pool_name").value || "鱼池1",
         conf: Number($("conf").value),
         imgsz: Number($("imgsz").value),
         frame_stride: Number($("frame_stride").value),
@@ -524,6 +568,10 @@
         setStatus("failed", "缺少文件", "请同时选择 left / right 两个视频。");
         return false;
       }
+      if(!$("pool_name").value){
+        setStatus("failed", "请选择鱼池", "请先在鱼池管理中添加鱼池。");
+        return false;
+      }
       return true;
     }
 
@@ -533,6 +581,8 @@
         const xhr = new XMLHttpRequest();
         xhr.open("POST", url, true);
         xhr.responseType = "json";
+        const t = localStorage.getItem("token");
+        if (t) xhr.setRequestHeader("Authorization", "Bearer " + t);
 
         xhr.upload.onprogress = (e)=>{
           if(e.lengthComputable){
@@ -541,6 +591,7 @@
         };
         xhr.onload = ()=>{
           setBar(100);
+          if (check401({ status: xhr.status })) return;
           if(xhr.status>=200 && xhr.status<300){
             resolve(xhr.response);
           }else{
@@ -563,6 +614,7 @@
       fd.append("right_video", rightFile);
 
       // params
+      fd.append("pool_name", String(p.pool_name));
       fd.append("conf", String(p.conf));
       fd.append("imgsz", String(p.imgsz));
       fd.append("frame_stride", String(p.frame_stride));
@@ -602,7 +654,8 @@
     async function pollOnce(){
       if(!currentJobId) return;
       try{
-        const r = await fetch(`/jobs/${currentJobId}`, {headers:{"accept":"application/json"}});
+        const r = await fetch(`/jobs/${currentJobId}`, { headers: { "accept": "application/json", ...authHeaders() } });
+        if (check401(r)) return;
         const js = await r.json();
         showJson(js);
 
@@ -651,6 +704,7 @@
       fd.append("left_video", leftFile);
       fd.append("right_video", rightFile);
 
+      fd.append("pool_name", String(p.pool_name));
       fd.append("conf", String(p.conf));
       fd.append("imgsz", String(p.imgsz));
       fd.append("frame_stride", String(p.frame_stride));

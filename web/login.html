@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>登录 - 双目体重估计</title>
+  <style>
+    :root{
+      --bg0:#0b1220;
+      --bg1:#0f1b33;
+      --stroke: rgba(255,255,255,.12);
+      --text:#e8eefc;
+      --muted: rgba(232,238,252,.68);
+      --brand:#7c5cff;
+      --danger:#ef4444;
+      --radius: 18px;
+      --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family:var(--sans); color:var(--text);
+      background:
+        radial-gradient(1200px 800px at 15% 10%, rgba(124,92,255,.35), transparent 60%),
+        radial-gradient(900px 600px at 85% 30%, rgba(34,197,94,.22), transparent 55%),
+        linear-gradient(180deg, var(--bg0), var(--bg1));
+      min-height:100vh;
+      display:flex; align-items:center; justify-content:center; padding:20px;
+    }
+    .card{
+      width:100%; max-width:400px;
+      border:1px solid var(--stroke);
+      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04));
+      border-radius: var(--radius);
+      padding:32px;
+      box-shadow: 0 20px 50px rgba(0,0,0,.35);
+    }
+    .card h1{ margin:0 0 8px; font-size:20px; }
+    .card p{ margin:0 0 24px; font-size:13px; color:var(--muted); }
+    .field{ margin-bottom:16px; }
+    .field label{ display:block; font-size:12px; color:var(--muted); margin-bottom:6px; }
+    .field input{
+      width:100%; padding:12px 14px; border-radius:12px;
+      border:1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.06);
+      color:var(--text); font-size:14px; outline:none;
+    }
+    .field input:focus{ border-color: var(--brand); }
+    .btn{
+      width:100%; padding:12px; border:none; border-radius:12px;
+      background: linear-gradient(135deg, var(--brand), #4f46e5);
+      color:#fff; font-size:15px; font-weight:600; cursor:pointer;
+      margin-top:8px;
+    }
+    .btn:hover{ opacity:.95; }
+    .btn:disabled{ opacity:.6; cursor:not-allowed; }
+    .err{ margin-top:12px; font-size:13px; color:var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>双目体重估计系统</h1>
+    <p>请登录后使用估重与历史统计功能</p>
+    <form id="loginForm">
+      <div class="field">
+        <label>用户名</label>
+        <input type="text" id="username" name="username" required autocomplete="username" />
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password" />
+      </div>
+      <button type="submit" class="btn" id="btnSubmit">登录</button>
+      <div class="err" id="err" style="display:none;"></div>
+      <p style="margin-top:16px; font-size:13px; color:var(--muted);">没有账号？<a href="#" id="showRegister" style="color:var(--brand);">注册</a></p>
+    </form>
+    <form id="registerForm" style="display:none;">
+      <div class="field">
+        <label>用户名（至少 2 个字符）</label>
+        <input type="text" id="reg_username" name="username" required minlength="2" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label>密码（至少 6 位）</label>
+        <input type="password" id="reg_password" name="password" required minlength="6" autocomplete="new-password" />
+      </div>
+      <div class="field">
+        <label>确认密码</label>
+        <input type="password" id="reg_confirm" name="confirm" required minlength="6" autocomplete="new-password" />
+      </div>
+      <button type="submit" class="btn" id="btnRegister">注册</button>
+      <div class="err" id="regErr" style="display:none;"></div>
+      <p style="margin-top:16px; font-size:13px; color:var(--muted);"><a href="#" id="showLogin" style="color:var(--brand);">返回登录</a></p>
+    </form>
+  </div>
+  <script>
+    const $ = id => document.getElementById(id);
+    $("showRegister").onclick = (e) => { e.preventDefault(); $("loginForm").style.display = "none"; $("registerForm").style.display = "block"; };
+    $("showLogin").onclick = (e) => { e.preventDefault(); $("registerForm").style.display = "none"; $("loginForm").style.display = "block"; };
+
+    $("loginForm").onsubmit = async (e) => {
+      e.preventDefault();
+      const username = $("username").value.trim();
+      const password = $("password").value;
+      $("err").style.display = "none";
+      $("btnSubmit").disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append("username", username);
+        fd.append("password", password);
+        const r = await fetch("/auth/login", { method: "POST", body: fd });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          $("err").textContent = data.detail || "登录失败";
+          $("err").style.display = "block";
+          return;
+        }
+        localStorage.setItem("token", data.access_token);
+        localStorage.setItem("username", data.username || username);
+        localStorage.setItem("role", data.role || "user");
+        window.location.href = "/app";
+      } catch (err) {
+        $("err").textContent = "网络错误：" + (err.message || "");
+        $("err").style.display = "block";
+      } finally {
+        $("btnSubmit").disabled = false;
+      }
+    };
+
+    $("registerForm").onsubmit = async (e) => {
+      e.preventDefault();
+      const username = $("reg_username").value.trim();
+      const password = $("reg_password").value;
+      const confirm = $("reg_confirm").value;
+      $("regErr").style.display = "none";
+      if (password !== confirm) {
+        $("regErr").textContent = "两次密码不一致";
+        $("regErr").style.display = "block";
+        return;
+      }
+      $("btnRegister").disabled = true;
+      try {
+        const fd = new FormData();
+        fd.append("username", username);
+        fd.append("password", password);
+        const r = await fetch("/auth/register", { method: "POST", body: fd });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          $("regErr").textContent = data.detail || "注册失败";
+          $("regErr").style.display = "block";
+          return;
+        }
+        $("regErr").textContent = "注册成功，请登录";
+        $("regErr").style.color = "var(--brand)";
+        $("regErr").style.display = "block";
+        setTimeout(() => { $("showLogin").click(); }, 800);
+      } catch (err) {
+        $("regErr").textContent = "网络错误：" + (err.message || "");
+        $("regErr").style.display = "block";
+      } finally {
+        $("btnRegister").disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>鱼池管理 - 双目体重估计</title>
+  <style>
+    :root{
+      --bg0:#0b1220;
+      --bg1:#0f1b33;
+      --stroke: rgba(255,255,255,.12);
+      --text:#e8eefc;
+      --muted: rgba(232,238,252,.68);
+      --brand:#7c5cff;
+      --danger:#ef4444;
+      --radius: 18px;
+      --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+    }
+    *{box-sizing:border-box}
+    body{ margin:0; font-family:var(--sans); color:var(--text);
+      background: radial-gradient(1200px 800px at 15% 10%, rgba(124,92,255,.35), transparent 60%),
+        radial-gradient(900px 600px at 85% 30%, rgba(34,197,94,.22), transparent 55%),
+        linear-gradient(180deg, var(--bg0), var(--bg1));
+      min-height:100vh; padding:20px;
+    }
+    .wrap{ max-width:800px; margin:0 auto; }
+    .topbar{
+      display:flex; align-items:center; justify-content:space-between; gap:14px;
+      padding:14px 16px; border:1px solid var(--stroke);
+      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04));
+      border-radius: var(--radius); margin-bottom:20px;
+    }
+    .topbar-nav{ display:flex; align-items:center; gap:10px; }
+    .topbar-right{ display:flex; align-items:center; gap:12px; margin-left:12px; padding-left:12px; border-left:1px solid var(--stroke); }
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:10px 16px; border-radius:999px;
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.08);
+      color:var(--text);
+      font-size:13px;
+      transition:.15s ease;
+      text-decoration:none;
+    }
+    a.pill:hover{ background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.22); transform: translateY(-1px); }
+    .pill.active{ background: rgba(124,92,255,.25); border-color: var(--brand); color:#fff; }
+    .pill.user-pill{ background: rgba(255,255,255,.06); color:var(--muted); font-size:12px; padding:8px 12px; }
+    a.pill{ color:inherit; }
+    .btn{ appearance:none; padding:10px 12px; border-radius:12px; border:1px solid var(--stroke); background:rgba(255,255,255,.08); color:var(--text); cursor:pointer; font-size:13px; font-weight:600; transition:.15s ease; }
+    .btn:hover{ background:rgba(255,255,255,.12); transform: translateY(-1px); }
+    .btn.danger{ border-color: var(--danger); color: var(--danger); }
+    .card{ border:1px solid var(--stroke); background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04)); border-radius: var(--radius); padding:20px; margin-bottom:20px; }
+    .card h2{ margin:0 0 12px; font-size:16px; }
+    .field{ margin-bottom:12px; }
+    .field label{ display:block; font-size:12px; color:var(--muted); margin-bottom:6px; }
+    .field input{ width:100%; max-width:280px; padding:8px 10px; border-radius:8px; border:1px solid var(--stroke); background:rgba(255,255,255,.06); color:var(--text); }
+    table{ width:100%; border-collapse:collapse; font-size:13px; }
+    th, td{ padding:10px 12px; text-align:left; border-bottom:1px solid rgba(255,255,255,.08); }
+    th{ color:var(--muted); font-weight:600; }
+    .err{ font-size:12px; color:var(--danger); margin-top:8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div style="display:flex; align-items:center; gap:0;">
+        <nav class="topbar-nav">
+          <a href="/app" class="pill">估重</a>
+          <a href="/history" class="pill">历史统计</a>
+          <a href="/pools-page" class="pill active">鱼池管理</a>
+        </nav>
+        <div class="topbar-right">
+          <span class="pill user-pill">用户: <span id="userName">—</span></span>
+          <button class="btn" id="btnLogout">退出</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>新增鱼池</h2>
+      <div class="field">
+        <label>鱼池名称</label>
+        <input type="text" id="newName" placeholder="例如：一号塘" />
+      </div>
+      <button class="btn" id="btnAdd">添加</button>
+      <div class="err" id="addErr" style="display:none;"></div>
+    </div>
+
+    <div class="card">
+      <h2>我的鱼池列表</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="err" id="listErr" style="display:none;"></div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    if (!localStorage.getItem("token")) { window.location.href = "/"; }
+    $("userName").textContent = localStorage.getItem("username") || "—";
+    $("btnLogout").onclick = () => { localStorage.removeItem("token"); localStorage.removeItem("username"); localStorage.removeItem("role"); window.location.href = "/"; };
+
+    function authHeaders() { return { "Authorization": "Bearer " + (localStorage.getItem("token") || "") }; }
+    function check401(r) { if (r && r.status === 401) { localStorage.removeItem("token"); window.location.href = "/"; return true; } return false; }
+
+    async function loadList() {
+      try {
+        const r = await fetch("/pools", { headers: authHeaders() });
+        if (check401(r)) return;
+        const list = await r.json();
+        $("listErr").style.display = "none";
+        const tbody = $("tbody");
+        if (!list.length) {
+          tbody.innerHTML = "<tr><td colspan=\"2\">暂无鱼池，请在上方添加</td></tr>";
+          return;
+        }
+        tbody.innerHTML = list.map(p => `
+          <tr data-id="${p.id}">
+            <td><span class="name-display">${escapeHtml(p.name)}</span>
+                <input type="text" class="name-edit" value="${escapeHtml(p.name)}" style="display:none; width:180px; padding:4px 8px;" /></td>
+            <td>
+              <button class="btn btn-edit" data-id="${p.id}">编辑</button>
+              <button class="btn btn-save" data-id="${p.id}" style="display:none;">保存</button>
+              <button class="btn btn-cancel" data-id="${p.id}" style="display:none;">取消</button>
+              <button class="btn danger btn-del" data-id="${p.id}" data-name="${escapeHtml(p.name)}">删除</button>
+            </td>
+          </tr>
+        `).join("");
+
+        tbody.querySelectorAll(".btn-edit").forEach(btn => {
+          btn.onclick = () => {
+            const row = btn.closest("tr");
+            row.querySelector(".name-display").style.display = "none";
+            row.querySelector(".name-edit").style.display = "inline-block";
+            row.querySelector(".btn-edit").style.display = "none";
+            row.querySelector(".btn-save").style.display = "inline-block";
+            row.querySelector(".btn-cancel").style.display = "inline-block";
+          };
+        });
+        tbody.querySelectorAll(".btn-cancel").forEach(btn => {
+          btn.onclick = () => {
+            const row = btn.closest("tr");
+            const inp = row.querySelector(".name-edit");
+            inp.value = row.querySelector(".name-display").textContent;
+            inp.style.display = "none";
+            row.querySelector(".name-display").style.display = "";
+            row.querySelector(".btn-edit").style.display = "";
+            row.querySelector(".btn-save").style.display = "none";
+            btn.style.display = "none";
+          };
+        });
+        tbody.querySelectorAll(".btn-save").forEach(btn => {
+          btn.onclick = async () => {
+            const row = btn.closest("tr");
+            const id = row.getAttribute("data-id");
+            const name = row.querySelector(".name-edit").value.trim();
+            if (!name) { alert("名称不能为空"); return; }
+            const fd = new FormData();
+            fd.append("name", name);
+            const r = await fetch("/pools/" + id, { method: "PATCH", body: fd, headers: authHeaders() });
+            if (check401(r)) return;
+            if (!r.ok) {
+              const data = await r.json().catch(() => ({}));
+              alert(data.detail || "更新失败");
+              return;
+            }
+            row.querySelector(".name-display").textContent = name;
+            row.querySelector(".name-edit").value = name;
+            row.querySelector(".name-edit").style.display = "none";
+            row.querySelector(".name-display").style.display = "";
+            row.querySelector(".btn-edit").style.display = "";
+            row.querySelector(".btn-save").style.display = "none";
+            row.querySelector(".btn-cancel").style.display = "none";
+          };
+        });
+        tbody.querySelectorAll(".btn-del").forEach(btn => {
+          btn.onclick = async () => {
+            const id = btn.getAttribute("data-id");
+            const name = btn.getAttribute("data-name");
+            if (!confirm("确定删除鱼池「" + name + "」？有历史记录时无法删除。")) return;
+            const r = await fetch("/pools/" + id, { method: "DELETE", headers: authHeaders() });
+            if (check401(r)) return;
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) {
+              alert(data.detail || "删除失败");
+              return;
+            }
+            loadList();
+          };
+        });
+      } catch (e) {
+        $("listErr").textContent = "加载失败";
+        $("listErr").style.display = "block";
+      }
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement("div");
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    $("btnAdd").onclick = async () => {
+      const name = $("newName").value.trim();
+      $("addErr").style.display = "none";
+      if (!name) {
+        $("addErr").textContent = "请输入鱼池名称";
+        $("addErr").style.display = "block";
+        return;
+      }
+      try {
+        const fd = new FormData();
+        fd.append("name", name);
+        const r = await fetch("/pools", { method: "POST", body: fd, headers: authHeaders() });
+        if (check401(r)) return;
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          $("addErr").textContent = data.detail || "添加失败";
+          $("addErr").style.display = "block";
+          return;
+        }
+        $("newName").value = "";
+        loadList();
+      } catch (e) {
+        $("addErr").textContent = "网络错误";
+        $("addErr").style.display = "block";
+      }
+    };
+
+    loadList();
+  </script>
+</body>
+</html>
