@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+
+# Virtual env / conda
+.venv/
+venv/
+env/
+*.conda
+*.lock
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs / temp
+*.log
+logs/
+tmp/
+.cache/
+
+# Large data / videos / outputs
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.zip
+*.rar
+data/
+datasets/
+outputs/
+runs/
+results/
+
+# Model weights
+*.pt
+*.pth
+weights/
+
+# Uvicorn / FastAPI
+*.sqlite3

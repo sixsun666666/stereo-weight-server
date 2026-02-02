@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Stereo Weight Estimator</title>
+  <style>
+    :root{
+      --bg0:#0b1220;
+      --bg1:#0f1b33;
+      --card: rgba(255,255,255,.06);
+      --card2: rgba(255,255,255,.09);
+      --stroke: rgba(255,255,255,.12);
+      --text:#e8eefc;
+      --muted: rgba(232,238,252,.68);
+      --brand:#7c5cff;
+      --brand2:#22c55e;
+      --warn:#f59e0b;
+      --danger:#ef4444;
+      --shadow: 0 20px 50px rgba(0,0,0,.35);
+      --radius: 18px;
+      --radius2: 14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family:var(--sans); color:var(--text);
+      background:
+        radial-gradient(1200px 800px at 15% 10%, rgba(124,92,255,.35), transparent 60%),
+        radial-gradient(900px 600px at 85% 30%, rgba(34,197,94,.22), transparent 55%),
+        radial-gradient(900px 700px at 55% 90%, rgba(59,130,246,.18), transparent 55%),
+        linear-gradient(180deg, var(--bg0), var(--bg1));
+      min-height:100vh;
+    }
+    a{color:inherit}
+    .wrap{max-width:1200px; margin:0 auto; padding:28px 18px 60px;}
+    .topbar{
+      display:flex; align-items:center; justify-content:space-between; gap:14px;
+      padding:14px 16px; border:1px solid var(--stroke);
+      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    .brand{
+      display:flex; align-items:center; gap:12px;
+    }
+    .logo{
+      width:40px; height:40px; border-radius: 14px;
+      background: conic-gradient(from 220deg, var(--brand), #4f46e5, #22c55e, #06b6d4, var(--brand));
+      box-shadow: 0 10px 20px rgba(0,0,0,.25);
+    }
+    .title{
+      display:flex; flex-direction:column; line-height:1.15;
+    }
+    .title b{font-size:16px; letter-spacing:.2px;}
+    .title span{font-size:12px; color:var(--muted)}
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      padding:8px 12px; border-radius:999px;
+      border:1px solid var(--stroke);
+      background: rgba(255,255,255,.05);
+      color:var(--muted);
+      font-size:12px;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap:18px;
+      margin-top:18px;
+    }
+    @media (max-width: 980px){
+      .grid{grid-template-columns:1fr;}
+    }
+
+    .card{
+      border:1px solid var(--stroke);
+      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+      overflow:hidden;
+    }
+    .card .hd{
+      padding:16px 16px 12px;
+      display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+    }
+    .card .hd h2{
+      margin:0; font-size:14px; letter-spacing:.2px;
+    }
+    .card .hd p{
+      margin:6px 0 0; font-size:12px; color:var(--muted);
+    }
+    .card .bd{padding:16px;}
+
+    .drop{
+      border:1.5px dashed rgba(255,255,255,.22);
+      border-radius: var(--radius2);
+      padding:16px;
+      background: rgba(0,0,0,.14);
+      transition:.15s ease;
+      position:relative;
+    }
+    .drop.drag{border-color: rgba(124,92,255,.7); background: rgba(124,92,255,.10)}
+    .row{display:grid; grid-template-columns: 1fr 1fr; gap:12px;}
+    @media(max-width:700px){ .row{grid-template-columns:1fr;} }
+
+    .filebox{
+      border:1px solid rgba(255,255,255,.12);
+      border-radius: var(--radius2);
+      padding:12px;
+      background: rgba(255,255,255,.04);
+      display:flex; flex-direction:column; gap:10px;
+      min-height:120px;
+    }
+    .filebox .lbl{
+      display:flex; align-items:center; justify-content:space-between;
+      font-size:12px; color:var(--muted);
+    }
+    .filebox .name{font-size:13px; color:var(--text); word-break:break-all}
+    .filebox input{display:none}
+    .btn{
+      appearance:none; border:none; cursor:pointer;
+      padding:10px 12px; border-radius: 12px;
+      background: rgba(255,255,255,.08);
+      color:var(--text);
+      border:1px solid rgba(255,255,255,.12);
+      transition:.15s ease;
+      font-weight:600; font-size:13px;
+    }
+    .btn:hover{transform: translateY(-1px); background: rgba(255,255,255,.10)}
+    .btn:disabled{opacity:.55; cursor:not-allowed; transform:none}
+    .btn.primary{
+      background: linear-gradient(135deg, var(--brand), #4f46e5);
+      border-color: rgba(124,92,255,.55);
+      box-shadow: 0 14px 28px rgba(124,92,255,.20);
+    }
+    .btn.good{
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      border-color: rgba(34,197,94,.55);
+      box-shadow: 0 14px 28px rgba(34,197,94,.18);
+    }
+    .btn.ghost{
+      background: transparent;
+    }
+
+    .actions{
+      display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+      margin-top:12px;
+    }
+    .hint{
+      font-size:12px; color:var(--muted);
+      margin-top:10px;
+      line-height:1.6;
+    }
+
+    .progress{
+      height:10px; border-radius:999px;
+      background: rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.10);
+      overflow:hidden;
+      margin-top:12px;
+    }
+    .bar{
+      height:100%;
+      width:0%;
+      background: linear-gradient(90deg, rgba(124,92,255,.95), rgba(34,197,94,.85));
+      transition: width .18s ease;
+    }
+
+    .form{
+      display:grid; gap:12px;
+    }
+    .form .two{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+    @media(max-width:980px){ .form .two{grid-template-columns:1fr;} }
+    .field{
+      background: rgba(0,0,0,.14);
+      border:1px solid rgba(255,255,255,.10);
+      border-radius: 14px;
+      padding:12px;
+    }
+    .field label{
+      display:flex; justify-content:space-between; align-items:center;
+      font-size:12px; color:var(--muted);
+      margin-bottom:8px;
+    }
+    .field input, .field select{
+      width:100%;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.05);
+      color:var(--text);
+      padding:10px 10px;
+      outline:none;
+    }
+    .field small{color:var(--muted); display:block; margin-top:8px; font-size:11px; line-height:1.5}
+
+    .status{
+      display:flex; align-items:center; gap:10px;
+      padding:10px 12px;
+      border-radius: 14px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.14);
+      margin-top:12px;
+    }
+    .dot{width:10px; height:10px; border-radius:50%;}
+    .dot.q{background: var(--warn)}
+    .dot.r{background: #3b82f6}
+    .dot.d{background: var(--brand2)}
+    .dot.f{background: var(--danger)}
+    .status b{font-size:13px}
+    .status span{font-size:12px; color:var(--muted)}
+
+    .result-grid{
+      display:grid; grid-template-columns: 1fr 1fr; gap:12px;
+      margin-top:12px;
+    }
+    @media(max-width:700px){ .result-grid{grid-template-columns:1fr;} }
+    .kpi{
+      padding:14px;
+      border-radius: 16px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.16);
+    }
+    .kpi .t{font-size:12px; color:var(--muted)}
+    .kpi .v{font-size:24px; font-weight:800; margin-top:6px}
+    .kpi .s{font-size:12px; color:var(--muted); margin-top:4px}
+    .mono{
+      font-family: var(--mono);
+      font-size: 12px;
+      color: rgba(232,238,252,.80);
+      background: rgba(0,0,0,.22);
+      border:1px solid rgba(255,255,255,.10);
+      border-radius: 14px;
+      padding:12px;
+      overflow:auto;
+      max-height: 360px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .footer{
+      margin-top:14px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align:center;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo"></div>
+        <div class="title">
+          <b>双目视频平均体重估计</b>
+          <span>Temporal Median Aggregation + MAD Robust Filtering</span>
+        </div>
+      </div>
+      <div class="pill" id="apiPill">API: <span id="apiBase">/</span></div>
+    </div>
+
+    <div class="grid">
+      <!-- Left: Upload + Run -->
+      <div class="card">
+        <div class="hd">
+          <div>
+            <h2>上传左右视频</h2>
+            <p>支持拖拽。推荐用 <b>/jobs</b> 异步方式处理 5min 视频（更稳定）。</p>
+          </div>
+          <button class="btn ghost" id="btnClear">清空</button>
+        </div>
+        <div class="bd">
+          <div class="drop" id="dropZone">
+            <div class="row">
+              <div class="filebox" id="boxLeft">
+                <div class="lbl">
+                  <span>Left Video（左目）</span>
+                  <button class="btn" id="pickLeft">选择文件</button>
+                </div>
+                <div class="name" id="leftName">未选择</div>
+                <div class="hint">建议 mp4。文件越大上传越慢（SSH 转发也会受影响）。</div>
+                <input type="file" id="leftFile" accept="video/*">
+              </div>
+
+              <div class="filebox" id="boxRight">
+                <div class="lbl">
+                  <span>Right Video（右目）</span>
+                  <button class="btn" id="pickRight">选择文件</button>
+                </div>
+                <div class="name" id="rightName">未选择</div>
+                <div class="hint">两段视频需同分辨率、同帧率，否则会报错。</div>
+                <input type="file" id="rightFile" accept="video/*">
+              </div>
+            </div>
+
+            <div class="actions">
+              <button class="btn primary" id="btnSubmit">提交任务（/jobs）</button>
+              <button class="btn good" id="btnSync">同步估计（/estimate）</button>
+              <button class="btn" id="btnPoll" disabled>查询结果</button>
+            </div>
+
+            <div class="progress" aria-label="upload progress">
+              <div class="bar" id="progressBar"></div>
+            </div>
+
+            <div class="status" id="statusBox" style="display:none;">
+              <div class="dot q" id="statusDot"></div>
+              <div>
+                <b id="statusTitle">状态</b><br>
+                <span id="statusText">—</span>
+              </div>
+            </div>
+
+            <div class="hint">
+              <b>提示：</b>你当前通过 SSH 端口转发访问服务，本页面与 API 同源（更稳）。<br>
+              如果 5min 视频样本数偏少，建议：放宽 <b>min_g/max_g</b> 或降低 <b>frame_stride</b>（3~5）。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Params + Result -->
+      <div class="card">
+        <div class="hd">
+          <div>
+            <h2>参数面板 & 结果</h2>
+            <p>建议先用默认值跑通，再逐步收紧过滤范围提升稳定性。</p>
+          </div>
+          <span class="pill">Job ID: <span id="jobIdText">—</span></span>
+        </div>
+        <div class="bd">
+          <div class="form">
+            <div class="two">
+              <div class="field">
+                <label><span>conf（置信度）</span><span id="confV">0.25</span></label>
+                <input id="conf" type="range" min="0.05" max="0.80" step="0.01" value="0.25">
+                <small>越高越严格，命中可能更少。建议 0.20~0.35。</small>
+              </div>
+              <div class="field">
+                <label><span>imgsz（输入尺寸）</span></label>
+                <select id="imgsz">
+                  <option>640</option>
+                  <option>576</option>
+                  <option>512</option>
+                  <option>448</option>
+                  <option>384</option>
+                </select>
+                <small>越大越慢。默认 640。</small>
+              </div>
+            </div>
+
+            <div class="two">
+              <div class="field">
+                <label><span>frame_stride（抽帧）</span><span id="strideV">5</span></label>
+                <input id="frame_stride" type="range" min="1" max="12" step="1" value="5">
+                <small>5min 视频建议 3~6。越小越慢，但窗聚合更稳定。</small>
+              </div>
+              <div class="field">
+                <label><span>window_sec（时间窗）</span><span id="windowV">0.5</span></label>
+                <input id="window_sec" type="range" min="0.2" max="2.0" step="0.1" value="0.5">
+                <small>对同一条鱼在窗内取中位数，抑制抖动与重复计数。</small>
+              </div>
+            </div>
+
+            <div class="two">
+              <div class="field">
+                <label><span>min_g（体重下限）</span></label>
+                <input id="min_g" type="number" value="50" min="0" step="10">
+                <small>用于剔除不合理体重。初跑建议 50。</small>
+              </div>
+              <div class="field">
+                <label><span>max_g（体重上限）</span></label>
+                <input id="max_g" type="number" value="3000" min="0" step="10">
+                <small>初跑建议 3000，跑通后再收紧。</small>
+              </div>
+            </div>
+
+            <div class="two">
+              <div class="field">
+                <label><span>mad_k（MAD 阈值）</span></label>
+                <input id="mad_k" type="number" value="3.5" min="1" max="10" step="0.1">
+                <small>越小越严格（更容易过滤掉离群值）。默认 3.5。</small>
+              </div>
+              <div class="field">
+                <label><span>use_cm（长度单位）</span></label>
+                <select id="use_cm">
+                  <option value="true" selected>true（cm）</option>
+                  <option value="false">false（m）</option>
+                </select>
+                <small>你的拟合公式大概率使用 cm。若结果数量级离谱再切换。</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="result-grid" id="kpis" style="display:none;">
+            <div class="kpi">
+              <div class="t">平均体重（MAD 后）</div>
+              <div class="v" id="kpiAvg">—</div>
+              <div class="s">avg_weight_g</div>
+            </div>
+            <div class="kpi">
+              <div class="t">中位数体重</div>
+              <div class="v" id="kpiMed">—</div>
+              <div class="s">median_weight_g</div>
+            </div>
+            <div class="kpi">
+              <div class="t">样本数（过滤后）</div>
+              <div class="v" id="kpiN">—</div>
+              <div class="s">mad_filtered_count</div>
+            </div>
+            <div class="kpi">
+              <div class="t">范围</div>
+              <div class="v" id="kpiRange">—</div>
+              <div class="s">min~max</div>
+            </div>
+          </div>
+
+          <div class="mono" id="rawJson">等待提交任务...</div>
+          <div class="footer">© Stereo Weight Estimation Server UI</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== Utilities =====
+    const $ = (id)=>document.getElementById(id);
+    const setBar = (p)=>{$("progressBar").style.width = Math.max(0, Math.min(100, p)) + "%";}
+    const fmt = (x, d=2)=> (x===null||x===undefined||Number.isNaN(x)) ? "—" : Number(x).toFixed(d);
+    const now = ()=>Date.now()/1000;
+
+    // Detect base (same origin)
+    $("apiBase").textContent = location.origin;
+
+    // ===== State =====
+    let leftFile = null, rightFile = null;
+    let currentJobId = null;
+    let pollTimer = null;
+
+    function setStatus(type, title, text){
+      $("statusBox").style.display = "flex";
+      $("statusTitle").textContent = title;
+      $("statusText").textContent = text || "";
+      const dot = $("statusDot");
+      dot.className = "dot " + (type==="queued"?"q": type==="running"?"r": type==="done"?"d":"f");
+    }
+
+    function showJson(obj){
+      $("rawJson").textContent = JSON.stringify(obj, null, 2);
+    }
+
+    function showKpis(result){
+      if(!result || !result.ok){ $("kpis").style.display="none"; return; }
+      $("kpis").style.display="grid";
+      $("kpiAvg").textContent = fmt(result.avg_weight_g, 2) + " g";
+      $("kpiMed").textContent = fmt(result.median_weight_g, 2) + " g";
+      $("kpiN").textContent = result.mad_filtered_count ?? "—";
+      $("kpiRange").textContent = fmt(result.min_weight_g, 0) + " ~ " + fmt(result.max_weight_g, 0) + " g";
+    }
+
+    // ===== Bind sliders =====
+    function bindRange(rangeId, outId){
+      const r = $(rangeId);
+      const o = $(outId);
+      const update = ()=> o.textContent = r.value;
+      r.addEventListener("input", update);
+      update();
+    }
+    bindRange("conf","confV");
+    bindRange("frame_stride","strideV");
+    bindRange("window_sec","windowV");
+
+    // ===== File pick =====
+    $("pickLeft").onclick = ()=> $("leftFile").click();
+    $("pickRight").onclick = ()=> $("rightFile").click();
+
+    $("leftFile").onchange = (e)=>{
+      leftFile = e.target.files?.[0] || null;
+      $("leftName").textContent = leftFile ? `${leftFile.name} (${(leftFile.size/1024/1024).toFixed(1)} MB)` : "未选择";
+    };
+    $("rightFile").onchange = (e)=>{
+      rightFile = e.target.files?.[0] || null;
+      $("rightName").textContent = rightFile ? `${rightFile.name} (${(rightFile.size/1024/1024).toFixed(1)} MB)` : "未选择";
+    };
+
+    // ===== Drag & drop =====
+    const dz = $("dropZone");
+    dz.addEventListener("dragover", (e)=>{e.preventDefault(); dz.classList.add("drag");});
+    dz.addEventListener("dragleave", ()=>dz.classList.remove("drag"));
+    dz.addEventListener("drop", (e)=>{
+      e.preventDefault(); dz.classList.remove("drag");
+      const files = [...(e.dataTransfer.files||[])].filter(f=>f.type.startsWith("video/"));
+      if(files.length===1){
+        // 智能：若只拖一个，填到空的那个
+        if(!leftFile){ leftFile = files[0]; $("leftName").textContent = `${leftFile.name} (${(leftFile.size/1024/1024).toFixed(1)} MB)`; }
+        else if(!rightFile){ rightFile = files[0]; $("rightName").textContent = `${rightFile.name} (${(rightFile.size/1024/1024).toFixed(1)} MB)`; }
+      } else if(files.length>=2){
+        leftFile = files[0]; rightFile = files[1];
+        $("leftName").textContent = `${leftFile.name} (${(leftFile.size/1024/1024).toFixed(1)} MB)`;
+        $("rightName").textContent = `${rightFile.name} (${(rightFile.size/1024/1024).toFixed(1)} MB)`;
+      }
+    });
+
+    // ===== Params =====
+    function gatherParams(){
+      return {
+        conf: Number($("conf").value),
+        imgsz: Number($("imgsz").value),
+        frame_stride: Number($("frame_stride").value),
+        window_sec: Number($("window_sec").value),
+        min_g: Number($("min_g").value),
+        max_g: Number($("max_g").value),
+        use_cm: $("use_cm").value === "true",
+        mad_k: Number($("mad_k").value),
+      };
+    }
+
+    function requireFiles(){
+      if(!leftFile || !rightFile){
+        setStatus("failed", "缺少文件", "请同时选择 left / right 两个视频。");
+        return false;
+      }
+      return true;
+    }
+
+    // ===== Upload with progress (XHR) =====
+    function xhrPost(url, formData){
+      return new Promise((resolve, reject)=>{
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", url, true);
+        xhr.responseType = "json";
+
+        xhr.upload.onprogress = (e)=>{
+          if(e.lengthComputable){
+            setBar(e.loaded / e.total * 100);
+          }
+        };
+        xhr.onload = ()=>{
+          setBar(100);
+          if(xhr.status>=200 && xhr.status<300){
+            resolve(xhr.response);
+          }else{
+            reject({status:xhr.status, body:xhr.response || xhr.responseText});
+          }
+        };
+        xhr.onerror = ()=> reject({status:0, body:"Network error"});
+        setBar(2);
+        xhr.send(formData);
+      });
+    }
+
+    // ===== Create job =====
+    $("btnSubmit").onclick = async ()=>{
+      if(!requireFiles()) return;
+      const p = gatherParams();
+
+      const fd = new FormData();
+      fd.append("left_video", leftFile);
+      fd.append("right_video", rightFile);
+
+      // params
+      fd.append("conf", String(p.conf));
+      fd.append("imgsz", String(p.imgsz));
+      fd.append("frame_stride", String(p.frame_stride));
+      fd.append("window_sec", String(p.window_sec));
+      fd.append("min_g", String(p.min_g));
+      fd.append("max_g", String(p.max_g));
+      fd.append("use_cm", String(p.use_cm));
+      fd.append("mad_k", String(p.mad_k));
+
+      try{
+        $("btnSubmit").disabled = true;
+        $("btnSync").disabled = true;
+        setStatus("queued", "上传中...", "正在上传视频并创建任务（/jobs）");
+        showJson({info:"uploading..."});
+
+        const resp = await xhrPost("/jobs", fd);
+        currentJobId = resp.job_id;
+        $("jobIdText").textContent = currentJobId || "—";
+        $("btnPoll").disabled = !currentJobId;
+
+        setStatus("queued", "任务已创建", `job_id=${currentJobId}（开始轮询查询结果）`);
+        showJson(resp);
+
+        // auto poll
+        startPolling();
+      }catch(err){
+        setStatus("failed", "创建任务失败", `${err.status || ""} ${JSON.stringify(err.body)}`);
+        showJson(err);
+      }finally{
+        $("btnSubmit").disabled = false;
+        $("btnSync").disabled = false;
+        setBar(0);
+      }
+    };
+
+    // ===== Poll job =====
+    async function pollOnce(){
+      if(!currentJobId) return;
+      try{
+        const r = await fetch(`/jobs/${currentJobId}`, {headers:{"accept":"application/json"}});
+        const js = await r.json();
+        showJson(js);
+
+        const st = js.status;
+        if(st==="queued") setStatus("queued", "排队中", "等待 GPU 资源...");
+        else if(st==="running") setStatus("running", "运行中", "正在估计体重（可持续查询）...");
+        else if(st==="done"){
+          setStatus("done", "完成", `耗时 ${fmt(js.elapsed_sec, 2)} s`);
+          showKpis(js.result);
+          stopPolling();
+        } else if(st==="failed"){
+          setStatus("failed", "失败", js.error || "unknown error");
+          showKpis(null);
+          stopPolling();
+        } else {
+          setStatus("running", "状态", st);
+        }
+      }catch(e){
+        setStatus("failed", "查询失败", String(e));
+      }
+    }
+
+    function startPolling(){
+      stopPolling();
+      pollOnce();
+      pollTimer = setInterval(pollOnce, 2000);
+    }
+    function stopPolling(){
+      if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    $("btnPoll").onclick = ()=>{
+      if(!currentJobId){
+        setStatus("failed", "没有 job_id", "请先提交任务。");
+        return;
+      }
+      startPolling();
+    };
+
+    // ===== Sync estimate =====
+    $("btnSync").onclick = async ()=>{
+      if(!requireFiles()) return;
+      const p = gatherParams();
+
+      const fd = new FormData();
+      fd.append("left_video", leftFile);
+      fd.append("right_video", rightFile);
+
+      fd.append("conf", String(p.conf));
+      fd.append("imgsz", String(p.imgsz));
+      fd.append("frame_stride", String(p.frame_stride));
+      fd.append("window_sec", String(p.window_sec));
+      fd.append("min_g", String(p.min_g));
+      fd.append("max_g", String(p.max_g));
+      fd.append("use_cm", String(p.use_cm));
+      fd.append("mad_k", String(p.mad_k));
+
+      try{
+        $("btnSubmit").disabled = true;
+        $("btnSync").disabled = true;
+        stopPolling();
+        currentJobId = null;
+        $("jobIdText").textContent = "—";
+        $("btnPoll").disabled = true;
+
+        setStatus("running", "同步运行中...", "POST /estimate 可能耗时较久（大文件可能超时）");
+        showJson({info:"running..."});
+
+        const resp = await xhrPost("/estimate", fd);
+        showJson(resp);
+        if(resp.ok){
+          setStatus("done", "完成", "同步估计成功");
+          showKpis(resp);
+        }else{
+          setStatus("failed", "失败", resp.error || resp.message || "unknown");
+          showKpis(null);
+        }
+      }catch(err){
+        setStatus("failed", "同步失败", `${err.status || ""} ${JSON.stringify(err.body)}`);
+        showJson(err);
+      }finally{
+        $("btnSubmit").disabled = false;
+        $("btnSync").disabled = false;
+        setBar(0);
+      }
+    };
+
+    // ===== Clear =====
+    $("btnClear").onclick = ()=>{
+      leftFile = null; rightFile = null; currentJobId = null;
+      $("leftFile").value = "";
+      $("rightFile").value = "";
+      $("leftName").textContent = "未选择";
+      $("rightName").textContent = "未选择";
+      $("jobIdText").textContent = "—";
+      $("btnPoll").disabled = true;
+      $("statusBox").style.display = "none";
+      $("kpis").style.display = "none";
+      $("rawJson").textContent = "等待提交任务...";
+      setBar(0);
+      stopPolling();
+    };
+  </script>
+</body>
+</html>
