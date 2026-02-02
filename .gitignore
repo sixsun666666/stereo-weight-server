@@ -46,3 +46,14 @@ weights/
 
 # Uvicorn / FastAPI
 *.sqlite3
+
+
+# Local DB / secrets
+*.db
+*.sqlite
+*.sqlite3
+
+# Local auth / secrets (if contains secrets)
+.env
+.env.*
+secrets/
